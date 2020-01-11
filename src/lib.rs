@@ -128,7 +128,8 @@ pub mod cereal_simulation {
             }
             // End timer
             let timer = Some(start.elapsed());
-            println!("{}", *probability.iter().max().unwrap())(
+            println!("{}", *probability.iter().max().unwrap());
+            (
                 Some(*probability.iter().max().unwrap()),
                 Some(*probability.iter().min().unwrap()),
                 Some(probability.iter().sum::<i32>() as f64 / probability.len() as f64),
