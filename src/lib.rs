@@ -118,7 +118,7 @@ pub mod cereal_simulation {
                         }
                         None => probability.append(&mut vec![0]),
                     }
-                    println!("{:?}", probability)
+                    println!("1")
                 }
             } else if !concurrent {
                 probability = calculate(number_of_loops, None).unwrap();
