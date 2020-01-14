@@ -1,22 +1,22 @@
 #[cfg(test)]
 mod tests {
     use crate::cereal_simulation::simulation;
-    //    #[test]
-    //    fn run_simple() {
-    //        let loop_numbers = [1, 10, 100];
-    //        println!("Single-threaded:");
-    //        for number_of_loops in loop_numbers.iter() {
-    //            println!("Number of Simulations:{}", number_of_loops);
-    //            let (max, min, mean, length) = simulation(*number_of_loops, false);
-    //            println!(
-    //                "Max:{} Min:{} Mean:{} Length:{:?}\n",
-    //                max.unwrap(),
-    //                min.unwrap(),
-    //                mean.unwrap(),
-    //                length.unwrap()
-    //            );
-    //        }
-    //    }
+       #[test]
+       fn run_simple() {
+           let loop_numbers = [1, 10, 100];
+           println!("Single-threaded:");
+           for number_of_loops in loop_numbers.iter() {
+               println!("Number of Simulations:{}", number_of_loops);
+               let (max, min, mean, length) = simulation(*number_of_loops, false);
+               println!(
+                   "Max:{} Min:{} Mean:{} Length:{:?}\n",
+                   max.unwrap(),
+                   min.unwrap(),
+                   mean.unwrap(),
+                   length.unwrap()
+               );
+           }
+       }
     #[test]
     fn run_multi() {
         let loop_numbers = [10, 100];
@@ -49,13 +49,12 @@ pub mod cereal_simulation {
         sender: Option<Sender<Option<Vec<i32>>>>,
     ) -> Option<Vec<i32>> {
         let sender_clone = sender.clone();
-        let multi_core;
         match sender_clone {
             Some(_t) => {
-                multi_core = true;
+                let multi_core = true;
             }
             None => {
-                multi_core = false;
+                let multi_core = false;
             }
         }
         if number_of_loops == 0 {
