@@ -1,49 +1,42 @@
 #[cfg(test)]
 mod tests {
-    use crate::cereal_simulation::simulation;
-    #[test]
-    fn run_simple() {
-        let loop_numbers = [1, 10, 100];
-        println!("Single-threaded:");
-        for number_of_loops in loop_numbers.iter() {
-            println!("Number of Simulations:{}", number_of_loops);
-            let (max, min, mean, length) = simulation(*number_of_loops, 1);
-            println!(
-                "Max:{} Min:{} Mean:{} Length:{:?}\n",
-                max.unwrap(),
-                min.unwrap(),
-                mean.unwrap(),
-                length.unwrap()
-            );
-        }
+    use crate::cereal_simulation::{simulation, simulation_single_thread, statistics};
+    const LOOP_NUMBERS: [i32; 5] = [1, 10, 100, 1_000, 10_000];
+
+    fn stats_wrapper(vec: Vec<i32>) {
+        let (mean, median, max, min) = statistics(vec);
+        println!(
+            "Mean: {}, Median: {}, Max: {}, Min: {}\n",
+            mean, median, max, min
+        )
     }
+
     #[test]
     fn run_multi() {
-        let loop_numbers = [1, 10, 100];
         println!("Multi-threaded:");
-        for number_of_loops in loop_numbers.iter() {
+        for number_of_loops in LOOP_NUMBERS.iter() {
             println!("Number of Simulations:{}", number_of_loops);
-            let (max, min, mean, length) = simulation(*number_of_loops, 4);
-            println!(
-                "Max:{} Min:{} Mean:{} Length:{:?}\n",
-                max.unwrap(),
-                min.unwrap(),
-                mean.unwrap(),
-                length.unwrap()
-            );
+            let (data, time) = simulation(*number_of_loops, 8);
+            println!("Time: {:?}", time);
+            stats_wrapper(data)
+        }
+    }
+
+    #[test]
+    fn run_single() {
+        println!("Multi-threaded:");
+        for number_of_loops in LOOP_NUMBERS.iter() {
+            println!("Number of Simulations:{}", number_of_loops);
+            let (data, time) = simulation_single_thread(*number_of_loops);
+            println!("Time: {:?}", time);
+            stats_wrapper(data)
         }
     }
 }
 
 pub mod cereal_simulation {
-    use rand::{thread_rng, Rng};
-    use std::sync::mpsc::Sender;
-    use std::{
-        sync::mpsc,
-        thread,
-        time::{Duration, Instant},
-    };
 
+    use std::sync::mpsc::Sender;
     fn calculate(
         number_of_loops: i32,
         sender: Option<Sender<Option<Vec<i32>>>>,
@@ -51,10 +44,10 @@ pub mod cereal_simulation {
         match number_of_loops {
             0 => {
                 match sender {
-                    None => sender.unwrap().send(None).unwrap(),
-                    _ => (),
+                    Some(tx) => tx.send(None).unwrap(),
+                    None => (),
                 }
-                return None;
+                None
             }
             _ => {
                 let mut probability: Vec<i32> = Vec::new();
@@ -64,63 +57,99 @@ pub mod cereal_simulation {
                     let mut opens: i32 = 0;
                     // loop until owns every prize
                     while prizes.contains(&0) {
-                        prizes[thread_rng().gen_range(0, 6)] += 1;
-                        opens += 1;
+                        prizes[rand::thread_rng().gen_range(0, 6)] += 1;
+                        opens += 1
                     }
-                    probability.push(opens);
+                    probability.push(opens)
                 }
-                match sender.clone() {
-                    Some(_t) => {
-                        sender.unwrap().send(Some(probability)).unwrap();
-                        None
-                    }
-                    None => Some(probability),
+                let probability = Some(probability);
+                match sender {
+                    Some(tx) => tx.send(probability.clone()).unwrap(),
+                    None => (),
                 }
+                probability
             }
         }
     }
 
-    pub fn simulation(
-        number_of_loops: i32,
-        number_of_threads: i32,
-    ) -> (Option<i32>, Option<i32>, Option<f64>, Option<Duration>) {
+    use rand::Rng;
+    use std::{
+        sync, thread,
+        time::{Duration, Instant},
+    };
+    pub fn simulation(number_of_loops: i32, number_of_threads: i32) -> (Vec<i32>, Duration) {
+        if number_of_loops < 0 {
+            panic!(
+                "Set number of loops greater than 0. You set it to {}.",
+                number_of_loops
+            )
+        } else if number_of_threads < 0 {
+            panic!(
+                "Set number of threads greater than 0. You set it to {}",
+                number_of_threads
+            )
+        }
         // Avoid divide by zero errors with this check
         match number_of_loops {
-            0 => (None, None, None, None),
+            0 => (vec![0], Duration::new(0, 0)),
             _ => {
                 // Start timer
                 let start = Instant::now();
                 let child_load = (number_of_loops as f32 / number_of_threads as f32).floor() as i32;
                 // Create channel
-                let (tx, rx) = mpsc::channel();
-                for _i in 0..(number_of_threads - 1) {
+                let (tx, rx) = sync::mpsc::channel();
+                for _i in 0..(number_of_threads) {
                     // Create a sender and a number of loop for the other thread
-                    let tx_clone = mpsc::Sender::clone(&tx);
+                    let tx_clone = sync::mpsc::Sender::clone(&tx);
                     let child_load_clone = child_load.clone();
                     // Spawn thread for calculations
                     thread::spawn(move || calculate(child_load_clone, Some(tx_clone)));
                 }
                 let load = (number_of_loops as f32 / number_of_threads as f32).ceil() as i32;
-                let mut probability = calculate(load, None).unwrap();
+                calculate(load, Some(tx));
+                let mut probability = Vec::new();
                 for data in rx {
                     match data {
-                        Some(mut t) => {
-                            probability.append(&mut t);
+                        Some(mut vec) => {
+                            probability.append(&mut vec);
                         }
-                        None => probability.append(&mut vec![0]),
+                        None => (),
                     }
                 }
                 probability.shrink_to_fit();
                 // End timer
-                let timer = Some(start.elapsed());
-                println!("{}", *probability.iter().max().unwrap());
-                (
-                    Some(*probability.iter().max().unwrap()),
-                    Some(*probability.iter().min().unwrap()),
-                    Some(probability.iter().sum::<i32>() as f64 / probability.len() as f64),
-                    timer,
-                )
+                let timer = start.elapsed();
+                (probability, timer)
             }
         }
+    }
+
+    pub fn simulation_single_thread(number_of_loops: i32) -> (Vec<i32>, Duration) {
+        // Avoid divide by zero errors with this check
+        match number_of_loops {
+            0 => (vec![0], Duration::new(0, 0)),
+            _ => {
+                // Start timer
+                let start = Instant::now();
+                let mut probability = calculate(number_of_loops, None).unwrap();
+                probability.shrink_to_fit();
+                // End timer
+                let timer = start.elapsed();
+                (probability, timer)
+            }
+        }
+    }
+
+    use statistical;
+    pub fn statistics(data: Vec<i32>) -> (f64, i32, i32, i32) {
+        let mut floating_data = Vec::new();
+        for datum in data.clone() {
+            floating_data.push(datum as f64)
+        }
+        let mean: f64 = statistical::mean(floating_data.as_slice());
+        let median = statistical::median(data.as_slice());
+        let max = data.iter().max().unwrap();
+        let min = data.iter().min().unwrap();
+        (mean, median, *max, *min)
     }
 }
